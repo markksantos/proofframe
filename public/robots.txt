@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://proofframe.com/sitemap.xml
