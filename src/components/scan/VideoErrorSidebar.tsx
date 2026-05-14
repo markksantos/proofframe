@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle, BookPlus, AlertTriangle, Clock, MessageSquareOff, Type } from 'lucide-react';
+import { CheckCircle, BookPlus, AlertTriangle, Clock, MessageSquareOff, Type, EyeOff } from 'lucide-react';
 import type { VideoError, VideoErrorType } from '../../types/index.ts';
 import Button from '../ui/Button.tsx';
 
@@ -38,6 +38,12 @@ const TYPE_CONFIG: Record<
     bg: 'bg-yellow-400/10 border-yellow-400/30',
     icon: Clock,
   },
+  unreadable_text: {
+    label: 'Unreadable',
+    color: 'text-warning',
+    bg: 'bg-warning/10 border-warning/30',
+    icon: EyeOff,
+  },
 };
 
 const FILTER_OPTIONS: Array<{ value: VideoErrorType | 'all'; label: string }> = [
@@ -46,7 +52,13 @@ const FILTER_OPTIONS: Array<{ value: VideoErrorType | 'all'; label: string }> = 
   { value: 'spelling', label: 'Spelling' },
   { value: 'missing_caption', label: 'Missing' },
   { value: 'timing', label: 'Timing' },
+  { value: 'unreadable_text', label: 'Unreadable' },
 ];
+
+function formatRange(range?: { start: number; end: number }): string | null {
+  if (!range) return null;
+  return `${range.start.toFixed(1)}s-${range.end.toFixed(1)}s`;
+}
 
 export default function VideoErrorSidebar({
   errors,
@@ -150,6 +162,37 @@ export default function VideoErrorSidebar({
                   {error.message}
                 </p>
 
+                {error.artifactUrl && (
+                  <img
+                    src={error.artifactUrl}
+                    alt=""
+                    className="mb-3 max-h-28 w-full rounded-lg border border-border object-cover"
+                  />
+                )}
+
+                <div className="mb-2 flex flex-wrap gap-1.5 text-[11px] text-text-muted">
+                  {formatRange(error.textTime) && (
+                    <span className="rounded bg-bg-tertiary px-2 py-0.5">
+                      text {formatRange(error.textTime)}
+                    </span>
+                  )}
+                  {formatRange(error.speechTime) && (
+                    <span className="rounded bg-bg-tertiary px-2 py-0.5">
+                      speech {formatRange(error.speechTime)}
+                    </span>
+                  )}
+                  {typeof error.confidence === 'number' && (
+                    <span className="rounded bg-bg-tertiary px-2 py-0.5">
+                      {(error.confidence * 100).toFixed(0)}%
+                    </span>
+                  )}
+                  {error.judgeDecision && (
+                    <span className="rounded bg-bg-tertiary px-2 py-0.5">
+                      judge {error.judgeDecision}
+                    </span>
+                  )}
+                </div>
+
                 {/* Type-specific details */}
                 {error.type === 'mismatch' && (
                   <div className="space-y-1.5 text-xs">
@@ -204,6 +247,27 @@ export default function VideoErrorSidebar({
                   </div>
                 )}
 
+                {error.type === 'spelling' && !error.spellingError && (
+                  <div className="space-y-1.5 text-xs">
+                    {error.onScreenText && (
+                      <div>
+                        <span className="text-text-muted">On screen: </span>
+                        <span className="text-text-primary font-mono">
+                          {error.onScreenText}
+                        </span>
+                      </div>
+                    )}
+                    {error.suggestedCorrection && (
+                      <div>
+                        <span className="text-text-muted">Suggested: </span>
+                        <span className="text-text-primary font-mono">
+                          {error.suggestedCorrection}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {error.type === 'missing_caption' && error.spokenText && (
                   <div className="text-xs">
                     <span className="text-text-muted">Spoken: </span>
@@ -218,6 +282,21 @@ export default function VideoErrorSidebar({
                     Offset: {Math.abs(error.offsetSeconds).toFixed(1)}s{' '}
                     {error.offsetSeconds > 0 ? 'late' : 'early'}
                   </div>
+                )}
+
+                {error.type === 'unreadable_text' && error.onScreenText && (
+                  <div className="text-xs">
+                    <span className="text-text-muted">OCR saw: </span>
+                    <span className="text-text-primary font-mono">
+                      {error.onScreenText}
+                    </span>
+                  </div>
+                )}
+
+                {error.evidenceNote && (
+                  <p className="text-text-muted text-xs mt-2">
+                    {error.evidenceNote}
+                  </p>
                 )}
               </motion.div>
             );

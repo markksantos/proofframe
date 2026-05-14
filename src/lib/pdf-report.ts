@@ -75,7 +75,7 @@ export function generateReport(result: ScanResult): void {
     doc.text('Breakdown:', margin, y);
     doc.setFont('helvetica', 'normal');
     doc.text(
-      `${s.mismatches} mismatches, ${s.spelling} spelling, ${s.missingCaptions} missing captions, ${s.timing} timing`,
+      `${s.mismatches} mismatches, ${s.spelling} spelling, ${s.missingCaptions} missing captions, ${s.timing} timing, ${s.unreadableText ?? 0} unreadable`,
       margin + 35,
       y,
     );
@@ -125,6 +125,7 @@ export function generateReport(result: ScanResult): void {
         (e) => e.type === 'missing_caption',
       ),
       timing: allVideoErrors.filter((e) => e.type === 'timing'),
+      unreadable_text: allVideoErrors.filter((e) => e.type === 'unreadable_text'),
     };
 
     const typeLabels: Record<string, string> = {
@@ -132,6 +133,7 @@ export function generateReport(result: ScanResult): void {
       spelling: 'Spelling Errors',
       missing_caption: 'Missing Captions',
       timing: 'Timing Issues',
+      unreadable_text: 'Unreadable Text',
     };
 
     for (const [type, errors] of Object.entries(errorsByType)) {

@@ -5,6 +5,7 @@ import type {
   TextSegment,
   VideoError,
   VideoErrorSummary,
+  OCRWord,
 } from '../types/index.ts';
 import { levenshteinSimilarity } from './frame-dedup.ts';
 import { checkWords } from './spell-checker.ts';
@@ -135,6 +136,51 @@ function findBestMatch(
   return { segment: bestMatch, score: bestScore, offset: bestOffset };
 }
 
+function wordHeight(word: OCRWord): number {
+  return word.bbox.y1 - word.bbox.y0;
+}
+
+function wordWidth(word: OCRWord): number {
+  return word.bbox.x1 - word.bbox.x0;
+}
+
+function wordCenterY(word: OCRWord): number {
+  return (word.bbox.y0 + word.bbox.y1) / 2;
+}
+
+function horizontalGap(a: OCRWord, b: OCRWord): number {
+  if (a.bbox.x1 < b.bbox.x0) return b.bbox.x0 - a.bbox.x1;
+  if (b.bbox.x1 < a.bbox.x0) return a.bbox.x0 - b.bbox.x1;
+  return 0;
+}
+
+function isProminentStandaloneWord(word: OCRWord): boolean {
+  return word.confidence >= 80 && wordHeight(word) >= 28 && wordWidth(word) >= 55;
+}
+
+function hasNearbyLineContext(word: OCRWord, words: OCRWord[]): boolean {
+  const height = Math.max(1, wordHeight(word));
+  const centerY = wordCenterY(word);
+
+  return words.some((other) => {
+    if (other === word) return false;
+    if (other.confidence < 50) return false;
+
+    const otherHeight = Math.max(1, wordHeight(other));
+    const sameLineTolerance = Math.max(10, Math.min(height, otherHeight) * 0.75);
+    const sameLine = Math.abs(wordCenterY(other) - centerY) <= sameLineTolerance;
+    if (!sameLine) return false;
+
+    return horizontalGap(word, other) <= Math.max(80, height * 4);
+  });
+}
+
+function getVideoSpellCheckWords(words: OCRWord[]): OCRWord[] {
+  return words.filter(
+    (word) => isProminentStandaloneWord(word) || hasNearbyLineContext(word, words),
+  );
+}
+
 /**
  * Analyzes video frames against a transcript to detect errors.
  *
@@ -256,25 +302,36 @@ export function analyzeVideoErrors(
   }
 
   // --- 3. Spell check all on-screen text ---
-  // Assign spelling errors only to the first frame of each segment to avoid inflation
+  // Check every retained frame, then dedupe within each segment. This avoids
+  // losing one-letter mistakes inside otherwise repeated captions.
   for (const textSeg of textSegments) {
-    const spellingErrors = checkWords(textSeg.ocrWords);
-    const firstFrameIndex = textSeg.frameIndices[0];
-    const frame = frameMap.get(firstFrameIndex);
-    if (!frame) continue;
-    for (const se of spellingErrors) {
-      const error: VideoError = {
-        type: 'spelling',
-        severity: 'error',
-        message: `"${se.word}" may be misspelled`,
-        frameIndex: firstFrameIndex,
-        timestamp: frame.timestamp,
-        onScreenText: se.word,
-        spellingError: se,
-        bbox: se.bbox,
-      };
-      frame.videoErrors!.push(error);
-      summary.spelling++;
+    const seenWords = new Set<string>();
+
+    for (const frameIndex of textSeg.frameIndices) {
+      const frame = frameMap.get(frameIndex);
+      if (!frame) continue;
+
+      const spellingErrors = checkWords(
+        getVideoSpellCheckWords(frame.ocrResult.words),
+      );
+      for (const se of spellingErrors) {
+        const key = normalize(se.word) || se.word.toLowerCase();
+        if (seenWords.has(key)) continue;
+        seenWords.add(key);
+
+        const error: VideoError = {
+          type: 'spelling',
+          severity: 'error',
+          message: `"${se.word}" may be misspelled`,
+          frameIndex,
+          timestamp: frame.timestamp,
+          onScreenText: se.word,
+          spellingError: se,
+          bbox: se.bbox,
+        };
+        frame.videoErrors!.push(error);
+        summary.spelling++;
+      }
     }
   }
 

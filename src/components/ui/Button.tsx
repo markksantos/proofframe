@@ -38,6 +38,18 @@ type ButtonAsLink = {
 
 type ButtonProps = ButtonAsButton | ButtonAsLink;
 
+function getMotionButtonProps({
+  variant,
+  size,
+  to,
+  ...buttonProps
+}: ButtonAsButton): Omit<ButtonAsButton, 'variant' | 'size' | 'to'> {
+  void variant;
+  void size;
+  void to;
+  return buttonProps;
+}
+
 export default function Button(props: ButtonProps) {
   const {
     variant = 'primary',
@@ -67,7 +79,7 @@ export default function Button(props: ButtonProps) {
     );
   }
 
-  const { to: _to, variant: _v, size: _s, ...buttonProps } = props as ButtonAsButton;
+  const buttonProps = getMotionButtonProps(props as ButtonAsButton);
   return (
     <motion.button
       whileHover={{ scale: 1.02 }}

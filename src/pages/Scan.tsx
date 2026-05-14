@@ -3,8 +3,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { AlertCircle, RefreshCw, ScanLine } from 'lucide-react';
 import useScan from '../hooks/useScan.ts';
 import { getRemaining } from '../lib/rate-limiter.ts';
-import { getAnalysisMode } from '../lib/scan-settings.ts';
-import type { AnalysisMode } from '../lib/scan-settings.ts';
 import AnimatedSection from '../components/ui/AnimatedSection.tsx';
 import Button from '../components/ui/Button.tsx';
 import UploadZone from '../components/scan/UploadZone.tsx';
@@ -18,7 +16,6 @@ export default function Scan() {
   const { progress, result, error, startScan, resetScan, cancelScan } =
     useScan();
   const [scanType, setScanType] = useState<'image' | 'video'>('image');
-  const [analysisMode, setAnalysisMode] = useState<AnalysisMode>(getAnalysisMode);
 
   const remaining = getRemaining();
 
@@ -27,11 +24,9 @@ export default function Scan() {
       const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
       const type = VIDEO_EXTENSIONS.includes(ext) ? 'video' : 'image';
       setScanType(type);
-      // Only use Gemini mode for video; images always use local
-      const mode = type === 'video' ? analysisMode : 'local';
-      startScan(file, mode);
+      startScan(file);
     },
-    [startScan, analysisMode],
+    [startScan],
   );
 
   const isProcessing =
@@ -54,8 +49,8 @@ export default function Scan() {
             </h1>
           </div>
           <p className="text-text-secondary max-w-xl mx-auto">
-            Upload an image or video to scan for spelling errors in burned-in
-            text. We'll OCR every frame and flag any issues.
+            Upload an image or video to proof visible text, captions, timing,
+            and transcript alignment.
           </p>
 
           {/* Remaining scans indicator */}
@@ -77,7 +72,7 @@ export default function Scan() {
               exit={{ opacity: 0, y: -20 }}
               transition={{ duration: 0.3 }}
             >
-              <ScanSettings onModeChange={setAnalysisMode} />
+              <ScanSettings />
               <UploadZone onFileSelected={handleFileSelected} />
             </motion.div>
           )}
@@ -95,7 +90,6 @@ export default function Scan() {
                 progress={progress}
                 onCancel={cancelScan}
                 scanType={scanType}
-                analysisMode={scanType === 'video' ? analysisMode : 'local'}
               />
             </motion.div>
           )}

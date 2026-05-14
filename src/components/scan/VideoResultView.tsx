@@ -47,6 +47,10 @@ export default function VideoResultView({ result }: VideoResultViewProps) {
   const [showTranscript, setShowTranscript] = useState(false);
   const previewRef = useRef<HTMLImageElement>(null);
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
+  const [previewNaturalSize, setPreviewNaturalSize] = useState({
+    width: 0,
+    height: 0,
+  });
 
   const selectedFrame: FrameResult | undefined =
     result.frames[selectedFrameIndex];
@@ -54,6 +58,10 @@ export default function VideoResultView({ result }: VideoResultViewProps) {
   const hasVideoErrors =
     result.frames.some((f) => (f.videoErrors ?? []).length > 0);
   const hasTranscript = !!result.transcript?.text;
+  const scaleX =
+    previewNaturalSize.width > 0 ? previewSize.width / previewNaturalSize.width : 0;
+  const scaleY =
+    previewNaturalSize.height > 0 ? previewSize.height / previewNaturalSize.height : 0;
 
   // Track preview image dimensions
   useEffect(() => {
@@ -64,6 +72,10 @@ export default function VideoResultView({ result }: VideoResultViewProps) {
       setPreviewSize({
         width: img.clientWidth,
         height: img.clientHeight,
+      });
+      setPreviewNaturalSize({
+        width: img.naturalWidth,
+        height: img.naturalHeight,
       });
     };
 
@@ -162,15 +174,11 @@ export default function VideoResultView({ result }: VideoResultViewProps) {
 
               {/* Bounding box overlays for video errors with bbox */}
               {previewSize.width > 0 &&
+                scaleX > 0 &&
+                scaleY > 0 &&
                 hasVideoErrors &&
                 (selectedFrame.videoErrors ?? []).map((error, index) => {
                   if (!error.bbox) return null;
-                  const img = previewRef.current;
-                  if (!img) return null;
-                  const naturalW = img.naturalWidth || 1;
-                  const naturalH = img.naturalHeight || 1;
-                  const scaleX = previewSize.width / naturalW;
-                  const scaleY = previewSize.height / naturalH;
 
                   return (
                     <div
@@ -196,15 +204,10 @@ export default function VideoResultView({ result }: VideoResultViewProps) {
 
               {/* Legacy bounding box overlays for spelling-only errors (image compat) */}
               {previewSize.width > 0 &&
+                scaleX > 0 &&
+                scaleY > 0 &&
                 !hasVideoErrors &&
                 selectedFrame.errors.map((error, index) => {
-                  const img = previewRef.current;
-                  if (!img) return null;
-                  const naturalW = img.naturalWidth || 1;
-                  const naturalH = img.naturalHeight || 1;
-                  const scaleX = previewSize.width / naturalW;
-                  const scaleY = previewSize.height / naturalH;
-
                   return (
                     <div
                       key={`${error.word}-${error.bbox.x0}-${error.bbox.y0}-${index}`}

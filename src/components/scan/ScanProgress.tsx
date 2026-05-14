@@ -1,7 +1,6 @@
 import { motion } from 'framer-motion';
 import { Check, Loader2 } from 'lucide-react';
 import type { ScanProgress as ScanProgressType, ScanStage } from '../../types/index.ts';
-import type { AnalysisMode } from '../../lib/scan-settings.ts';
 import ProgressBar from '../ui/ProgressBar.tsx';
 import Button from '../ui/Button.tsx';
 
@@ -9,7 +8,6 @@ interface ScanProgressProps {
   progress: ScanProgressType;
   onCancel: () => void;
   scanType?: 'image' | 'video';
-  analysisMode?: AnalysisMode;
 }
 
 interface StepDef {
@@ -23,18 +21,12 @@ const IMAGE_STEPS: StepDef[] = [
   { stage: 'spellchecking', label: 'Spell Checking' },
 ];
 
-const VIDEO_LOCAL_STEPS: StepDef[] = [
+const VIDEO_STEPS: StepDef[] = [
   { stage: 'loading', label: 'Loading' },
   { stage: 'extracting', label: 'Extracting' },
   { stage: 'transcribing', label: 'Transcribing' },
   { stage: 'scanning', label: 'Scanning' },
-  { stage: 'analyzing', label: 'Analyzing' },
-];
-
-const VIDEO_GEMINI_STEPS: StepDef[] = [
-  { stage: 'loading', label: 'Uploading' },
-  { stage: 'analyzing', label: 'Analyzing (Gemini)' },
-  { stage: 'extracting', label: 'Extracting Frames' },
+  { stage: 'analyzing', label: 'Judging' },
 ];
 
 function getStageIndex(stage: ScanStage, steps: StepDef[]): number {
@@ -42,18 +34,17 @@ function getStageIndex(stage: ScanStage, steps: StepDef[]): number {
   return idx >= 0 ? idx : -1;
 }
 
-function getSteps(scanType: string, analysisMode: string): StepDef[] {
+function getSteps(scanType: string): StepDef[] {
   if (scanType !== 'video') return IMAGE_STEPS;
-  return analysisMode === 'gemini' ? VIDEO_GEMINI_STEPS : VIDEO_LOCAL_STEPS;
+  return VIDEO_STEPS;
 }
 
 export default function ScanProgress({
   progress,
   onCancel,
   scanType = 'image',
-  analysisMode = 'local',
 }: ScanProgressProps) {
-  const STEPS = getSteps(scanType, analysisMode);
+  const STEPS = getSteps(scanType);
   const currentIndex = getStageIndex(progress.stage, STEPS);
 
   const frameProgress =

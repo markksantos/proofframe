@@ -4,6 +4,10 @@ import { isCustomWord } from './custom-dictionary.ts';
 
 let checker: ReturnType<typeof nspell> | null = null;
 
+const MIN_WORD_CONFIDENCE = 60;
+const MIN_WORD_HEIGHT_PX = 12;
+const MIN_WORD_WIDTH_PX = 8;
+
 /**
  * Initializes the nspell spell checker by fetching en_US dictionary files.
  *
@@ -39,26 +43,46 @@ export async function initSpellChecker(): Promise<void> {
  * Determines whether a word should be skipped during spell checking.
  *
  * Skip rules:
- * - Less than 2 characters
- * - Single letters
- * - ALL CAPS (likely acronym or brand name)
- * - Contains numbers
+ * - 2 characters or less
+ * - Short ALL CAPS tokens (likely acronyms)
+ * - Pure numbers or mostly numeric tokens
  * - Looks like a URL (contains . / or :)
  */
 function shouldSkip(word: string): boolean {
-  // Skip very short words and single letters
-  if (word.length < 2) return true;
+  // Skip very short OCR fragments. Two-letter "errors" are usually visual noise.
+  if (word.length <= 2) return true;
 
-  // Skip ALL CAPS (acronyms, brand names, abbreviations)
-  if (word === word.toUpperCase() && /[A-Z]/.test(word)) return true;
+  // Skip short ALL CAPS acronyms, but still check longer title-card words.
+  if (word.length <= 3 && word === word.toUpperCase() && /[A-Z]/.test(word)) {
+    return true;
+  }
 
-  // Skip words containing digits
-  if (/\d/.test(word)) return true;
+  // Skip pure numbers and mostly numeric OCR fragments.
+  if (/^\d+$/.test(word)) return true;
+  if (/\d/.test(word) && !/[a-zA-Z]{3,}/.test(word)) return true;
 
   // Skip URL-like tokens
   if (/[./:@]/.test(word)) return true;
 
   return false;
+}
+
+function isLowQualityOcrWord(word: OCRWord): boolean {
+  const width = word.bbox.x1 - word.bbox.x0;
+  const height = word.bbox.y1 - word.bbox.y0;
+
+  return (
+    word.confidence < MIN_WORD_CONFIDENCE ||
+    width < MIN_WORD_WIDTH_PX ||
+    height < MIN_WORD_HEIGHT_PX
+  );
+}
+
+function extractCheckTokens(text: string): string[] {
+  const tokens = text.match(/[a-zA-Z][a-zA-Z']*/g) ?? [];
+  return tokens
+    .map((token) => token.replace(/'s$/i, ''))
+    .filter((token) => token.length > 0);
 }
 
 /**
@@ -81,25 +105,27 @@ export function checkWords(
   const errors: SpellingError[] = [];
 
   for (const word of words) {
-    // Strip punctuation from the edges for checking
-    const cleaned = word.text.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '');
+    if (isLowQualityOcrWord(word)) continue;
 
-    if (!cleaned) continue;
-    if (shouldSkip(cleaned)) continue;
-    if (isCustomWord(cleaned)) continue;
+    const tokens = extractCheckTokens(word.text);
 
-    const correct = checker.correct(cleaned);
+    for (const token of tokens) {
+      if (shouldSkip(token)) continue;
+      if (isCustomWord(token)) continue;
 
-    if (!correct) {
-      const suggestions = checker.suggest(cleaned).slice(0, 5);
+      const correct = checker.correct(token);
 
-      errors.push({
-        word: word.text,
-        suggestions,
-        confidence: word.confidence,
-        bbox: word.bbox,
-        ...(frameIndex !== undefined ? { frameIndex } : {}),
-      });
+      if (!correct) {
+        const suggestions = checker.suggest(token).slice(0, 5);
+
+        errors.push({
+          word: token,
+          suggestions,
+          confidence: word.confidence,
+          bbox: word.bbox,
+          ...(frameIndex !== undefined ? { frameIndex } : {}),
+        });
+      }
     }
   }
 

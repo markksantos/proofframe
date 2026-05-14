@@ -9,8 +9,17 @@ type WhisperPipeline = (
   options: Record<string, unknown>,
 ) => Promise<{
   text: string;
-  chunks?: Array<{ text: string; timestamp: [number, number] }>;
+  chunks?: Array<{
+    text: string;
+    timestamp?: [number | null, number | null];
+  }>;
 }>;
+
+interface NavigatorWithGPU extends Navigator {
+  gpu?: {
+    requestAdapter: () => Promise<unknown>;
+  };
+}
 
 let transcriber: WhisperPipeline | null = null;
 
@@ -29,10 +38,14 @@ export async function initTranscriber(
 
   const { pipeline } = await import('@huggingface/transformers');
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const progressCallback = onProgress
-    ? (data: any) => {
-        if (typeof data?.progress === 'number') {
+    ? (data: unknown) => {
+        if (
+          typeof data === 'object' &&
+          data !== null &&
+          'progress' in data &&
+          typeof data.progress === 'number'
+        ) {
           onProgress(Math.round(data.progress));
         }
       }
@@ -42,9 +55,8 @@ export async function initTranscriber(
   let device: 'webgpu' | 'wasm' = 'wasm';
   if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const gpu = (navigator as any).gpu;
-      const adapter = await gpu.requestAdapter();
+      const gpu = (navigator as NavigatorWithGPU).gpu;
+      const adapter = await gpu?.requestAdapter();
       if (adapter) device = 'webgpu';
     } catch {
       // WebGPU not available
@@ -100,11 +112,64 @@ function groupWordsIntoSegments(words: TranscriptWord[]): TranscriptSegment[] {
   return segments;
 }
 
+function buildApproximateWords(
+  text: string,
+  startTime: number,
+  endTime: number,
+): TranscriptWord[] {
+  const tokens = text.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return [];
+
+  const duration = Math.max(0.1, endTime - startTime);
+  const step = duration / tokens.length;
+
+  return tokens.map((token, index) => ({
+    text: token,
+    startTime: startTime + step * index,
+    endTime: startTime + step * (index + 1),
+  }));
+}
+
+function chunksToSegments(
+  chunks: Array<{ text: string; timestamp?: [number | null, number | null] }>,
+): TranscriptSegment[] {
+  return chunks.flatMap((chunk, index) => {
+    const [rawStart, rawEnd] = chunk.timestamp ?? [null, null];
+    const startTime = typeof rawStart === 'number' ? rawStart : index;
+    const endTime =
+      typeof rawEnd === 'number' && rawEnd > startTime
+        ? rawEnd
+        : startTime + 1;
+    const words = buildApproximateWords(chunk.text, startTime, endTime);
+
+    if (words.length === 0) return [];
+
+    return {
+      text: chunk.text.trim(),
+      startTime,
+      endTime,
+      words,
+    };
+  });
+}
+
+function createTextOnlyTranscript(text: string): TranscriptResult {
+  return {
+    text: text.trim(),
+    segments: [],
+    words: [],
+  };
+}
+
 /**
- * Transcribes audio data using Whisper, returning word-level timestamps.
+ * Transcribes audio data using Whisper.
+ *
+ * Word-level timestamps are ideal, but some browser Whisper exports do not
+ * include the cross-attention tensors required for them. In that case, fall
+ * back to segment timestamps, then to text-only transcription.
  *
  * @param audioData - 16kHz mono Float32Array audio samples
- * @returns Transcript with word-level timestamps grouped into segments
+ * @returns Transcript with the best timestamp detail available
  */
 export async function transcribeAudio(
   audioData: Float32Array,
@@ -115,25 +180,67 @@ export async function transcribeAudio(
     );
   }
 
-  const result = await transcriber(audioData, {
-    return_timestamps: 'word',
-    chunk_length_s: 30,
-    stride_length_s: 5,
-  });
+  try {
+    const result = await transcriber(audioData, {
+      return_timestamps: 'word',
+      chunk_length_s: 30,
+      stride_length_s: 5,
+    });
 
-  const words: TranscriptWord[] = (result.chunks ?? []).map((chunk) => ({
-    text: chunk.text.trim(),
-    startTime: chunk.timestamp[0],
-    endTime: chunk.timestamp[1],
-  }));
+    const words: TranscriptWord[] = (result.chunks ?? [])
+      .filter(
+        (chunk) =>
+          typeof chunk.timestamp?.[0] === 'number' &&
+          typeof chunk.timestamp?.[1] === 'number',
+      )
+      .map((chunk) => ({
+        text: chunk.text.trim(),
+        startTime: chunk.timestamp![0]!,
+        endTime: chunk.timestamp![1]!,
+      }));
 
-  const segments = groupWordsIntoSegments(words);
+    const segments = groupWordsIntoSegments(words);
 
-  return {
-    text: result.text.trim(),
-    segments,
-    words,
-  };
+    return {
+      text: result.text.trim(),
+      segments,
+      words,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const canFallbackToSegmentTimestamps =
+      message.includes('cross attentions') ||
+      message.includes('output_attentions') ||
+      message.includes('token-level timestamps');
+
+    if (!canFallbackToSegmentTimestamps) {
+      throw error;
+    }
+  }
+
+  try {
+    const result = await transcriber(audioData, {
+      return_timestamps: true,
+      chunk_length_s: 30,
+      stride_length_s: 5,
+      force_full_sequences: false,
+    });
+    const segments = chunksToSegments(result.chunks ?? []);
+    const words = segments.flatMap((segment) => segment.words);
+
+    return {
+      text: result.text.trim(),
+      segments,
+      words,
+    };
+  } catch {
+    const result = await transcriber(audioData, {
+      chunk_length_s: 30,
+      stride_length_s: 5,
+    });
+
+    return createTextOnlyTranscript(result.text);
+  }
 }
 
 /**

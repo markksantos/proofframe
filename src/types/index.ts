@@ -17,6 +17,29 @@ export interface OCRResult {
   confidence: number;
 }
 
+export type ProofingMode = 'visual_only' | 'audio_aware';
+
+export interface ProviderStatus {
+  name: string;
+  status: 'success' | 'failed' | 'skipped';
+  confidence?: number;
+  wordCount?: number;
+  error?: string;
+}
+
+export interface ScanCompleteness {
+  mode: ProofingMode;
+  degraded: boolean;
+  notes: string[];
+  transcriptionProviders: ProviderStatus[];
+  consensusConfidence?: number;
+  aiJudge: {
+    status: 'ran' | 'skipped' | 'failed';
+    model?: string;
+    error?: string;
+  };
+}
+
 export type ScanStage =
   | 'idle'
   | 'loading'
@@ -57,12 +80,16 @@ export interface VideoErrorSummary {
   spelling: number;
   missingCaptions: number;
   timing: number;
+  unreadableText?: number;
 }
 
 export interface ScanResult {
   type: 'image' | 'video';
   fileName: string;
   scanDate: string;
+  analysisSource?: 'local' | 'gemini' | 'local_fallback' | 'server_visual' | 'server_audio';
+  analysisNote?: string;
+  scanCompleteness?: ScanCompleteness;
   totalErrors: number;
   frames: FrameResult[];
   imageUrl?: string;
@@ -78,6 +105,7 @@ export interface TranscriptWord {
   text: string;
   startTime: number;
   endTime: number;
+  confidence?: number;
 }
 
 export interface TranscriptSegment {
@@ -102,9 +130,29 @@ export interface TextSegment {
   endTime: number;
   frameIndices: number[];
   ocrWords: OCRWord[];
+  representativeFrameIndex?: number;
+  bbox?: BoundingBox;
+  confidence?: number;
 }
 
-export type VideoErrorType = 'mismatch' | 'spelling' | 'missing_caption' | 'timing';
+export interface VisualTextSegment extends TextSegment {
+  id: string;
+  representativeFrameUrl?: string;
+  cropUrl?: string;
+  frameWidth?: number;
+  frameHeight?: number;
+  sourceFrameWordCount?: number;
+  sourceFrameMedianWordHeight?: number;
+  sourceLineWordCount?: number;
+  nearbyWordCount?: number;
+}
+
+export type VideoErrorType =
+  | 'mismatch'
+  | 'spelling'
+  | 'missing_caption'
+  | 'timing'
+  | 'unreadable_text';
 
 export interface VideoError {
   type: VideoErrorType;
@@ -114,12 +162,17 @@ export interface VideoError {
   timestamp: number;
   onScreenText?: string;
   spokenText?: string;
+  suggestedCorrection?: string;
   similarity?: number;
   textTime?: { start: number; end: number };
   speechTime?: { start: number; end: number };
   offsetSeconds?: number;
   spellingError?: SpellingError;
   bbox?: BoundingBox;
+  confidence?: number;
+  evidenceNote?: string;
+  judgeDecision?: 'confirm' | 'reject' | 'needs_review';
+  artifactUrl?: string;
 }
 
 export interface PricingTier {

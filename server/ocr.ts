@@ -1,22 +1,22 @@
 import { createWorker } from 'tesseract.js';
 import type { Worker } from 'tesseract.js';
-import type { OCRResult, OCRWord } from '../types/index.ts';
+import type { OCRResult, OCRWord } from '../src/types/index.ts';
 
 let worker: Worker | null = null;
 
-export async function initWorker(): Promise<Worker> {
+async function getWorker(): Promise<Worker> {
   if (worker) return worker;
   worker = await createWorker('eng');
   return worker;
 }
 
-export async function recognizeImage(
-  imageSource: string | Blob,
-): Promise<OCRResult> {
-  const w = await initWorker();
-  const { data } = await w.recognize(imageSource, {}, { text: true, blocks: true });
+export async function recognizeFrame(imagePath: string): Promise<OCRResult> {
+  const activeWorker = await getWorker();
+  const { data } = await activeWorker.recognize(imagePath, {}, {
+    text: true,
+    blocks: true,
+  });
 
-  // Extract words from the nested block -> paragraph -> line -> word structure
   const words: OCRWord[] = [];
   if (data.blocks) {
     for (const block of data.blocks) {
@@ -46,9 +46,8 @@ export async function recognizeImage(
   };
 }
 
-export async function terminateWorker(): Promise<void> {
-  if (worker) {
-    await worker.terminate();
-    worker = null;
-  }
+export async function terminateOcrWorker(): Promise<void> {
+  if (!worker) return;
+  await worker.terminate();
+  worker = null;
 }

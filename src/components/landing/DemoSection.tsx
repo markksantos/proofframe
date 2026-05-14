@@ -15,20 +15,29 @@ const errors: ErrorBadge[] = [
 
 export default function DemoSection() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const hasStartedRef = useRef(false);
   const isInView = useInView(containerRef, { once: true, margin: '-100px' });
   const [scanComplete, setScanComplete] = useState(false);
   const [scanning, setScanning] = useState(false);
 
   useEffect(() => {
-    if (isInView && !scanning && !scanComplete) {
+    if (isInView && !hasStartedRef.current) {
+      hasStartedRef.current = true;
+      let completeTimer: number | undefined;
+      const startTimer = window.setTimeout(() => {
       setScanning(true);
-      const timer = setTimeout(() => {
+        completeTimer = window.setTimeout(() => {
         setScanning(false);
         setScanComplete(true);
       }, 2000);
-      return () => clearTimeout(timer);
+      }, 0);
+
+      return () => {
+        window.clearTimeout(startTimer);
+        if (completeTimer !== undefined) window.clearTimeout(completeTimer);
+      };
     }
-  }, [isInView, scanning, scanComplete]);
+  }, [isInView]);
 
   return (
     <section className="py-24">
