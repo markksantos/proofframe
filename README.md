@@ -11,6 +11,8 @@
 
 [Features](#-features) · [Getting Started](#-getting-started) · [Tech Stack](#️-tech-stack)
 
+![ProofFrame scan interface](public/screenshots/proofframe-scan.png)
+
 </div>
 
 ---

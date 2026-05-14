@@ -268,3 +268,13 @@
 - Simplified the results summary to show one provider/completeness line instead of repeating the same degraded OpenRouter message and listing every failed provider chip.
 - Regression replay against `.proofframe/jobs/c8007d0c-3e31-4724-b519-39a92fc7ea65/result.json`: previous result had 82 issues; the new deterministic pass returns 0 issues.
 - `npm test`, `npm run lint`, and `npm run build` pass.
+
+## Phase 19: README UI Screenshot
+- [x] Capture current scan UI screenshot from the local app
+- [x] Add screenshot asset under `public/screenshots/`
+- [x] Reference screenshot from `README.md`
+- [x] Verify docs-only diff and push update
+
+### Phase 19 Review
+- Added `public/screenshots/proofframe-scan.png`, captured from `http://localhost:5173/scan`.
+- Embedded the screenshot near the top of `README.md` so the public GitHub repo shows the current scan interface.
