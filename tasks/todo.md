@@ -278,3 +278,49 @@
 ### Phase 19 Review
 - Added `public/screenshots/proofframe-scan.png`, captured from `http://localhost:5173/scan`.
 - Embedded the screenshot near the top of `README.md` so the public GitHub repo shows the current scan interface.
+
+## Phase 20: Local Network Speed Diagnosis and Optimization
+- [x] Run initial `speedtest-cli` baseline
+- [x] Measure DNS resolution latency
+- [x] Measure packet loss and latency jitter
+- [x] Check MTU/path MTU behavior
+- [x] Check Wi-Fi signal, noise, channel, PHY rate, and interference indicators
+- [x] Inspect bandwidth-heavy background processes
+- [x] Inspect network locations, services, VPNs, proxies, and stale profiles
+- [x] Inspect and optimize mDNS/DNS cache behavior
+- [x] Apply safe network optimizations
+- [x] Run after speed and latency checks
+- [x] Document before/after findings and review
+
+### Phase 20 Review
+- Baseline `speedtest-cli --simple`: 25.29 ms ping, 322.24 Mbps download, 137.65 Mbps upload.
+- After `speedtest-cli --simple`: 27.15 ms ping, 317.04 Mbps download, 118.38 Mbps upload. Throughput was essentially unchanged/slightly lower within normal Wi-Fi test variance.
+- Biggest improvement was latency stability: router ping improved from 15.08 ms average / 100.49 ms max / 22.31 ms stddev to 4.31 ms average / 10.02 ms max / 1.49 ms stddev. Cloudflare ping improved from 44.82 ms average / 115.22 ms max / 30.95 ms stddev to 21.19 ms average / 45.46 ms max / 5.08 ms stddev.
+- Packet loss remained 0% before and after. Full 1500-byte path MTU worked before and after.
+- Wi-Fi link quality was strong: 802.11ax on 6 GHz channel 69 at 160 MHz, signal/noise -46/-78 dBm, transmit rate 1921 Mbps.
+- DNS was already using Cloudflare `1.1.1.1` and `1.0.0.1`; measured DNS lookups were generally fast. Google DNS showed slower samples than Cloudflare, so DNS servers were left on Cloudflare.
+- Moved Wi-Fi to the top of network service order. Disabled unused `USB 10/100/1000 LAN`, `Thunderbolt Bridge`, and `iPhone USB USB` network services. Left the 2.5G adapter, ProtonVPN, and Tailscale available.
+- Removed obvious stale preferred Wi-Fi entries: one car hotspot, direct printer/camera networks, and old duplicate iPhone hotspot names.
+- Flushed DNS cache. Full mDNSResponder restart and DHCP renewal require administrator credentials on this Mac, so they were not forced.
+- No live bandwidth-hogging background process was found. Chrome and Codex had light active traffic; Tor had historical/cumulative traffic but was not actively consuming bandwidth during the sample.
+
+## Phase 21: Production Hardening & Deploy-Readiness
+- [x] Finish the in-flight OpenRouter transcription fix (chat-completions `input_audio` instead of the nonexistent `/audio/transcriptions` endpoint; real audio-capable models; `PROOFFRAME_STT_MODELS` override)
+- [x] Make the frontend API base configurable (`VITE_PROOFFRAME_API_BASE`) via `src/lib/api-base.ts`; default relative `/api` for dev proxy
+- [x] Resolve server artifact URLs (frame/crop previews) against the API base for deployed split frontend/backend
+- [x] Add configurable CORS origin allowlist on the API (`PROOFFRAME_CORS_ORIGIN`)
+- [x] Add production API start script (`npm run start:api`) and `npm run typecheck`
+- [x] Migrate deploy config from Netlify to Vercel (`vercel.json` with COOP/COEP headers + SPA rewrite; removed `netlify.toml`)
+- [x] Add `.env.example` documenting all env vars (no secrets)
+- [x] Remove dead browser-side video code (`transcriber.ts`, `video-extractor.ts`, `text-comparator.ts`) and the unused heavy deps `@huggingface/transformers`, `@ffmpeg/ffmpeg`, `@ffmpeg/util`
+- [x] `npm audit fix` to clear all 14 advisories (incl. critical jspdf) — 0 vulnerabilities
+- [x] Rewrite README to match the real two-process BYOK architecture and deploy story
+- [x] End-to-end verification (image scan, video scan, live OpenRouter transcription call, build, lint, test)
+
+### Phase 21 Review
+- Verified the full stack boots: web on :5173, API on :8787, `/api/health` reports `ffmpegAvailable: true`.
+- Image scan (browser, client-side Tesseract + nspell): uploaded a `SALEE TODAY` PNG, flagged `SALEE` at 89% with suggestions and a red bbox overlay.
+- Video scan (server pipeline, native ffmpeg): synthetic `SALEE TODAY` MP4 → 12 frames extracted, OCR'd, grouped, one spelling issue over 0.0s-2.8s; degraded note shown when no key; frame thumbnails load via the artifact endpoint.
+- Live OpenRouter transcription call against a real key (reused from llm-council) returned HTTP 402 "requires at least $0.50 in balance for audio" for all three audio models — model IDs are valid; the code sanitizes this to "needs audio credits" and degrades cleanly. Audio-aware end-to-end needs a funded OpenRouter key (a NEEDS-FROM-MARK item, not a code defect).
+- `npm run build`, `npm run lint`, and `npm test` all pass; `npm audit` reports 0 vulnerabilities.
+- Deploy model documented: static frontend → Vercel; Express API → a long-running Node host with ffmpeg (Render/Railway/Fly/VPS). The API cannot run on Vercel/Netlify serverless (native ffmpeg + persistent disk + long-lived polling jobs).

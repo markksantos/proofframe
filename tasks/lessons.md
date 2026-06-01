@@ -29,8 +29,20 @@
 - Video spell checking should not trust isolated one-frame OCR fragments. Captions during motion/transition can be read as partial words like `Ame` from `America`; require a stable multi-frame segment or a clean high-confidence phrase before checking spelling.
 - Do not define video proofing as caption-only. The app must review intentionally edited overlay text such as captions, titles, callouts, and lower thirds even when it does not match speech, while ignoring embedded text inside screen recordings, screenshots, apps, documents, and webpages.
 
+## Deployment Architecture
+- ProofFrame is a two-process app. The web frontend (and the entire image-scan pipeline) is static and runs anywhere; the video proofing API is a long-running Express service that needs native ffmpeg/ffprobe, persistent disk for job artifacts, and long-lived polling jobs. It CANNOT run on Vercel/Netlify serverless. Deploy the frontend to Vercel and the API to a long-running Node host (Render/Railway/Fly/VPS).
+- Do not hardcode the frontend's API base to relative `/api`. That only works in dev via the Vite proxy. Use `VITE_PROOFFRAME_API_BASE` (build-time) so a deployed static frontend can reach a backend on a different origin, and rewrite server-relative artifact URLs (`/api/scans/.../artifacts/...`) against that base in the client so `<img>` previews load.
+- OpenRouter has no dedicated `/audio/transcriptions` REST endpoint. Transcribe audio via the standard `/chat/completions` endpoint with an `input_audio` content part to an audio-capable multimodal model (e.g. `google/gemini-2.5-flash`, `openai/gpt-audio`). OpenRouter audio requests require a funded balance (≥ ~$0.50) and 402 otherwise — sanitize that to "needs audio credits" and degrade to visual-only.
+
+## OpenRouter / BYOK
+- Audio-aware proofing needs a FUNDED OpenRouter key. A zero/low-balance key returns HTTP 402 on audio models even though the model IDs are valid. Surface this as a clear degraded note, never a raw payload.
+
+## Dependency Hygiene
+- The browser-side video approach (Phases 9-12: `transcriber.ts`/@huggingface/transformers, `video-extractor.ts`/@ffmpeg, `text-comparator.ts`) was abandoned in Phase 13 for the server pipeline but the files and heavy deps lingered. Periodically grep for zero-importer lib modules and drop them plus their deps. `frame-dedup.ts` looks dead but `proofing-utils.ts` still uses `levenshteinSimilarity` from it — keep it.
+
 ## Verification
 - Vitest does not support Jest's `--runInBand` flag in this project. Use `npm test` for the stable test command.
+- When polling the scan API from a shell loop, the progress `message` can contain control characters that break naive JSON parsing in `python3 -m json.tool`. Read `.proofframe/jobs/<id>/result.json` directly or use a Node script instead.
 
 ## Tailwind v4
 - No `tailwind.config.js` — use `@theme` block in CSS
