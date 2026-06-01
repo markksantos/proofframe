@@ -7,15 +7,14 @@
     "dev": "concurrently -k -n api,web \"npm:dev:api\" \"npm:dev:web\"",
     "dev:web": "vite",
     "dev:api": "tsx watch server/index.ts",
+    "start:api": "tsx server/index.ts",
     "build": "tsc -b && vite build",
+    "typecheck": "tsc -b --noEmit",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run"
   },
   "dependencies": {
-    "@ffmpeg/ffmpeg": "^0.12.15",
-    "@ffmpeg/util": "^0.12.2",
-    "@huggingface/transformers": "^3.8.1",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "framer-motion": "^12.33.0",

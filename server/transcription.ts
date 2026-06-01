@@ -18,26 +18,51 @@ interface TranscriptionProviderResult {
   transcript?: ProviderTranscript;
 }
 
-const OPENROUTER_TRANSCRIPTIONS_URL =
-  'https://openrouter.ai/api/v1/audio/transcriptions';
+// OpenRouter does not expose a dedicated speech-to-text REST endpoint. Audio is
+// transcribed through the standard chat completions endpoint by sending an
+// `input_audio` content part to a multimodal model that accepts audio input.
+const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
-const OPENROUTER_STT_MODELS: OpenRouterSttModel[] = [
+// Three real, audio-capable OpenRouter models. Running the same clip through
+// independent models gives the consensus layer something meaningful to vote on.
+// These can be overridden with PROOFFRAME_STT_MODELS (comma-separated ids).
+const DEFAULT_STT_MODELS: OpenRouterSttModel[] = [
   {
-    name: 'OpenRouter Chirp 3',
-    model: 'google/chirp-3',
-    confidence: 0.78,
+    name: 'OpenRouter Gemini 2.5 Flash',
+    model: 'google/gemini-2.5-flash',
+    confidence: 0.8,
   },
   {
-    name: 'OpenRouter GPT-4o Mini Transcribe',
-    model: 'openai/gpt-4o-mini-transcribe',
+    name: 'OpenRouter Gemini 2.0 Flash',
+    model: 'google/gemini-2.0-flash-001',
     confidence: 0.76,
   },
   {
-    name: 'OpenRouter Whisper Large v3',
-    model: 'openai/whisper-large-v3',
-    confidence: 0.74,
+    name: 'OpenRouter GPT-4o Audio',
+    model: 'openai/gpt-audio',
+    confidence: 0.78,
   },
 ];
+
+function resolveSttModels(): OpenRouterSttModel[] {
+  const override = process.env.PROOFFRAME_STT_MODELS?.trim();
+  if (!override) return DEFAULT_STT_MODELS;
+
+  const models = override
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean)
+    .map((model, index) => ({
+      name: `OpenRouter ${model}`,
+      model,
+      confidence: 0.78 - index * 0.02,
+    }));
+
+  return models.length > 0 ? models : DEFAULT_STT_MODELS;
+}
+
+const TRANSCRIPTION_PROMPT =
+  'Transcribe the spoken words in this audio verbatim. Return only the transcript text with no commentary, labels, timestamps, or quotation marks. If there is no intelligible speech, return an empty string.';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -80,7 +105,33 @@ function normalizeOpenRouterError(status: number, body: string): string {
     return 'OpenRouter rate limit reached.';
   }
 
+  if (status === 404 || lowerMessage.includes('not a valid model')) {
+    return 'OpenRouter audio model is unavailable.';
+  }
+
   return `OpenRouter transcription failed (${status}).`;
+}
+
+function extractChatText(data: unknown): string {
+  if (!isRecord(data)) return '';
+  const choices = Array.isArray(data.choices) ? data.choices : [];
+  const first = isRecord(choices[0]) ? choices[0] : {};
+  const message = isRecord(first.message) ? first.message : {};
+  const content = message.content;
+
+  if (typeof content === 'string') return content.trim();
+
+  // Some providers return content as an array of parts.
+  if (Array.isArray(content)) {
+    return content
+      .map((part) =>
+        isRecord(part) && typeof part.text === 'string' ? part.text : '',
+      )
+      .join(' ')
+      .trim();
+  }
+
+  return '';
 }
 
 function buildApproximateWords(
@@ -119,7 +170,7 @@ function createProviderTranscript(
 }
 
 async function transcribeWithOpenRouter(
-  audioPath: string,
+  audioBase64: string,
   apiKey: string,
   durationSeconds: number,
   model: OpenRouterSttModel,
@@ -135,20 +186,31 @@ async function transcribeWithOpenRouter(
   }
 
   try {
-    const audio = await readFile(audioPath);
-    const response = await fetch(OPENROUTER_TRANSCRIPTIONS_URL, {
+    const response = await fetch(OPENROUTER_CHAT_URL, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
+        'X-Title': 'ProofFrame Local Engine',
       },
       body: JSON.stringify({
         model: model.model,
-        language: 'en',
-        input_audio: {
-          data: audio.toString('base64'),
-          format: 'wav',
-        },
+        temperature: 0,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: TRANSCRIPTION_PROMPT },
+              {
+                type: 'input_audio',
+                input_audio: {
+                  data: audioBase64,
+                  format: 'wav',
+                },
+              },
+            ],
+          },
+        ],
       }),
     });
 
@@ -158,9 +220,19 @@ async function transcribeWithOpenRouter(
       );
     }
 
-    const data: unknown = await response.json();
-    const record = isRecord(data) ? data : {};
-    const text = asString(record.text)?.trim() ?? '';
+    const text = extractChatText(await response.json());
+
+    if (!text) {
+      return {
+        status: {
+          name: model.name,
+          status: 'success',
+          confidence: model.confidence,
+          wordCount: 0,
+        },
+      };
+    }
+
     const transcript = createProviderTranscript(model, text, durationSeconds);
 
     return {
@@ -186,7 +258,7 @@ async function transcribeWithOpenRouter(
 export function getOpenRouterSkippedTranscriptionStatuses(
   reason: string,
 ): ProviderStatus[] {
-  return OPENROUTER_STT_MODELS.map((model) => ({
+  return resolveSttModels().map((model) => ({
     name: model.name,
     status: 'skipped',
     error: reason,
@@ -198,10 +270,13 @@ export async function buildTranscriptionConsensus(
   openRouterApiKey: string,
   durationSeconds: number,
 ): Promise<ConsensusTranscriptResult> {
+  const models = resolveSttModels();
+  const audioBase64 = (await readFile(audioPath)).toString('base64');
+
   const results = await Promise.all(
-    OPENROUTER_STT_MODELS.map((model) =>
+    models.map((model) =>
       transcribeWithOpenRouter(
-        audioPath,
+        audioBase64,
         openRouterApiKey,
         durationSeconds,
         model,

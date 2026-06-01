@@ -130,7 +130,17 @@ async function runJob(
   }
 }
 
-app.use(cors());
+// In local/dev mode the frontend is same-origin via the Vite proxy, so a
+// permissive CORS policy is fine. For a deployed split frontend/backend, lock
+// this down by setting PROOFFRAME_CORS_ORIGIN to the frontend origin(s)
+// (comma-separated), e.g. PROOFFRAME_CORS_ORIGIN=https://proofframe.example.com
+const corsOrigins = process.env.PROOFFRAME_CORS_ORIGIN?.split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(
+  cors(corsOrigins && corsOrigins.length > 0 ? { origin: corsOrigins } : {}),
+);
 app.use(express.json());
 
 app.get('/api/health', async (_req, res) => {
