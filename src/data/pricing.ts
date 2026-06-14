@@ -65,7 +65,7 @@ export const faqItems = [
   {
     question: 'Is my footage kept private?',
     answer:
-      'Absolutely. All OCR processing happens client-side in your browser — your files are never uploaded to a remote server. Scan results stay on your machine unless you explicitly choose to export or share a report.',
+      'Image proofing runs entirely client-side in your browser — those files are never uploaded. Video proofing sends your file to the analysis server only to extract and OCR frames; the job and all its artifacts are deleted when you finish or start a new scan, and your OpenRouter key is used only for that scan and never stored server-side.',
   },
   {
     question: 'How accurate is the spell checking?',

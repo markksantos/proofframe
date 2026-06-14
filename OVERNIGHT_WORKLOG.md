@@ -99,3 +99,84 @@ What remains (all either Mark-gated or polish, none blocking):
 - Audio-aware path validated only up to the live 402 (needs a funded OpenRouter key — Mark item).
 - Backend host decision + actual deploy (Mark-gated).
 - Optional polish: the Scan bundle is ~460KB (Tesseract + jsPDF + framer-motion) — fine for an OCR tool but could be code-split further; no server-side rate limiting (client-side only); video jobs accumulate under `.proofframe/jobs/` with no TTL/cleanup cron (fine for local, worth a sweeper for a hosted backend).
+
+## QA Verification
+
+**Reviewer:** independent QA subagent (claude-sonnet-4-6), 2026-05-31
+
+### Commands run
+
+```
+npm run build       # tsc -b + vite build
+npm run typecheck   # tsc -b --noEmit
+npm run lint        # eslint .
+npm test            # vitest run
+npm audit           # security check
+npx tsx server/index.ts  # boot check (8-second timeout)
+```
+
+### Results
+
+| Check | Result |
+|---|---|
+| `npm run build` | PASS — 2452 modules transformed, clean output to `dist/` |
+| `npm run typecheck` | PASS — exits 0, no diagnostics |
+| `npm run lint` | PASS — no warnings or errors |
+| `npm test` | PASS — 10/10 tests in `tests/proofing-utils.test.ts` |
+| `npm audit` | PASS — 0 vulnerabilities |
+| Server boot | PASS — `ProofFrame local analysis API running at http://127.0.0.1:8787` |
+
+### Worklog claims vs. reality
+
+All key claims verified accurate:
+
+- `src/lib/transcriber.ts`, `video-extractor.ts`, `text-comparator.ts` confirmed absent from `src/lib/`.
+- `src/lib/api-base.ts` present and correct — reads `VITE_PROOFFRAME_API_BASE`, strips trailing slash, exports `apiUrl()`.
+- `vercel.json` present with correct COOP/COEP headers and SPA rewrite; `netlify.toml` absent.
+- `.env.example` present, contains no secrets (BYOK design confirmed).
+- `PROOFFRAME_CORS_ORIGIN` wiring confirmed in `server/index.ts` (line 135-137).
+- `start:api` and `typecheck` scripts confirmed in `package.json`.
+- `server/transcription.ts` uses `/chat/completions` with `input_audio` content part to the three listed audio-capable models; `PROOFFRAME_STT_MODELS` override implemented.
+- Git working tree is clean; 3 overnight commits on `main`, 3 commits ahead of `origin/main` (not pushed — correct per policy).
+
+### No build-breaking issues found
+
+No fixes required. The author's self-report is accurate.
+
+### Remaining non-blocking items (unchanged from author's list)
+
+- Audio transcription path exercisable only with a funded OpenRouter key (BYOK design, Mark-gated).
+- Backend production host not selected yet (Render/Railway/Fly/VPS — Mark-gated).
+- Vercel project not created / production deploy not performed (Mark-gated).
+- Optional: job artifact TTL sweeper for hosted backend; Scan chunk code-splitting.
+
+## Session 2026-06-14 — server-scan privacy cleanup completed
+
+Picked up an in-flight, uncommitted feature in the working tree (server-side
+video-job deletion wired into the `useScan` lifecycle + matching FAQ/pricing
+privacy copy) and finished it.
+
+**Completed the privacy guarantee.** The new copy promises video jobs are
+"deleted when you finish or start a new scan", but the hook only deleted on
+`startScan` / `resetScan` / `cancelScan` — navigating *away* from the Scan page
+(e.g. clicking Pricing) with a finished video result still on screen left the
+uploaded video, frames, crops, and audio lingering server-side. Added a single
+unmount `useEffect` in `src/hooks/useScan.ts` that, on unmount, deletes any
+lingering server job (`deleteServerScan`), revokes object URLs, and terminates
+the in-browser Tesseract worker. `terminateWorker` is null-safe; the DELETE
+endpoint is idempotent (204 even for unknown ids), so the fire-and-forget call
+is safe.
+
+**Verification:** `npm run typecheck`, `npm run lint`, `npm test` (10/10),
+`npm run build` all pass. Booted the API (`/api/health` → `ffmpegAvailable:true`,
+DELETE of a nonexistent id → 204). Dogfooded the built bundle in a headless
+browser: Scan → Pricing → Scan navigation (which fires the new unmount cleanup)
+produces zero console errors, and the Scan page re-mounts and renders correctly.
+
+**Note (regression vs. prior QA):** `npm audit` now reports 4 advisories
+(2 high esbuild/vite, 2 critical shell-quote/concurrently) where the
+2026-05-31 QA saw 0. These are all newly-disclosed CVEs in **dev-only**
+tooling (build + dev-script deps) that do **not** ship in the production
+`dist/` bundle. Fixes require breaking majors (vite 8, concurrently 10) and
+were left out of scope to keep this a safe finishing pass — flagged here for a
+deliberate dependency-bump session.

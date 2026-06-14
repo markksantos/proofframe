@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import type {
   ScanProgress,
   ScanResult,
@@ -7,7 +7,7 @@ import type {
 import { initWorker, recognizeImage, terminateWorker } from '../lib/ocr.ts';
 import { initSpellChecker, checkWords } from '../lib/spell-checker.ts';
 import { canScan, recordScan } from '../lib/rate-limiter.ts';
-import { runServerVideoScan } from '../lib/server-scan-client.ts';
+import { runServerVideoScan, deleteServerScan } from '../lib/server-scan-client.ts';
 import { getOpenRouterApiKey } from '../lib/scan-settings.ts';
 
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'tiff', 'webp'];
@@ -41,12 +41,42 @@ export default function useScan() {
   const [error, setError] = useState<string | null>(null);
   const cancelRef = useRef(false);
   const objectUrlsRef = useRef<string[]>([]);
+  const serverScanIdRef = useRef<string | null>(null);
 
   const cleanupObjectUrls = useCallback(() => {
     for (const url of objectUrlsRef.current) {
       URL.revokeObjectURL(url);
     }
     objectUrlsRef.current = [];
+  }, []);
+
+  // Tell the backend to delete the previous video job's artifacts (uploaded
+  // video, frames, crops, audio) so user footage doesn't linger server-side.
+  const cleanupServerScan = useCallback(() => {
+    const scanId = serverScanIdRef.current;
+    if (scanId) {
+      serverScanIdRef.current = null;
+      void deleteServerScan(scanId);
+    }
+  }, []);
+
+  // On unmount (e.g. navigating away from the Scan page with a finished video
+  // result still on screen), delete any lingering server-side job so footage
+  // doesn't outlive the session, and free the in-browser OCR worker.
+  useEffect(() => {
+    return () => {
+      cancelRef.current = true;
+      const scanId = serverScanIdRef.current;
+      if (scanId) {
+        serverScanIdRef.current = null;
+        void deleteServerScan(scanId);
+      }
+      for (const url of objectUrlsRef.current) {
+        URL.revokeObjectURL(url);
+      }
+      objectUrlsRef.current = [];
+      void terminateWorker();
+    };
   }, []);
 
   const startScan = useCallback(async function runScan(
@@ -57,6 +87,7 @@ export default function useScan() {
     setResult(null);
     setError(null);
     cleanupObjectUrls();
+    cleanupServerScan();
 
     try {
       // Validate file type
@@ -174,9 +205,16 @@ export default function useScan() {
           getOpenRouterApiKey(),
           setProgress,
           () => cancelRef.current,
+          (scanId) => {
+            serverScanIdRef.current = scanId;
+          },
         );
 
-        if (cancelRef.current || !scanResult) return;
+        if (cancelRef.current || !scanResult) {
+          // runServerVideoScan already deleted the job on cancel; drop the ref.
+          serverScanIdRef.current = null;
+          return;
+        }
 
         recordScan();
         setResult(scanResult);
@@ -191,6 +229,7 @@ export default function useScan() {
       if (cancelRef.current) return;
 
       cleanupObjectUrls();
+      cleanupServerScan();
 
       const message =
         err instanceof Error
@@ -207,21 +246,23 @@ export default function useScan() {
         message,
       });
     }
-  }, [cleanupObjectUrls]);
+  }, [cleanupObjectUrls, cleanupServerScan]);
 
   const resetScan = useCallback(() => {
     cancelRef.current = true;
     cleanupObjectUrls();
+    cleanupServerScan();
     setProgress(initialProgress);
     setResult(null);
     setError(null);
-  }, [cleanupObjectUrls]);
+  }, [cleanupObjectUrls, cleanupServerScan]);
 
   const cancelScan = useCallback(() => {
     cancelRef.current = true;
+    cleanupServerScan();
     setProgress(initialProgress);
     setError(null);
-  }, []);
+  }, [cleanupServerScan]);
 
   return { progress, result, error, startScan, resetScan, cancelScan };
 }

@@ -201,7 +201,7 @@ export default function PricingPage() {
           <div className="flex items-center justify-center gap-2 mb-4">
             <Shield className="w-5 h-5 text-accent" />
             <span className="text-text-secondary text-sm">
-              All processing happens in your browser. Your files never leave your machine.
+              Image proofing runs in your browser. Video jobs are deleted after each scan, and your API key is never stored.
             </span>
           </div>
           <Button variant="primary" size="lg" to="/scan">

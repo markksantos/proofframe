@@ -47,11 +47,21 @@ function resolveArtifactUrls(result: ScanResult): ScanResult {
   };
 }
 
+// Delete a server-side video job and all its on-disk artifacts (uploaded
+// video, extracted frames, crops, audio, result.json). Called when the user
+// resets or starts a new scan so user footage doesn't linger on the backend.
+export async function deleteServerScan(scanId: string): Promise<void> {
+  await fetch(apiUrl(`/api/scans/${scanId}`), { method: 'DELETE' }).catch(
+    () => undefined,
+  );
+}
+
 export async function runServerVideoScan(
   file: File,
   openRouterApiKey: string,
   onProgress: (progress: ScanProgress) => void,
   isCancelled: () => boolean,
+  onScanId?: (scanId: string) => void,
 ): Promise<ScanResult | null> {
   const formData = new FormData();
   formData.append('file', file);
@@ -68,6 +78,7 @@ export async function runServerVideoScan(
   const scanId = created.scanId ?? created.id;
   if (!scanId) throw new Error('Local proofing server did not return a scan id.');
 
+  onScanId?.(scanId);
   onProgress(created.progress);
 
   while (!isCancelled()) {
@@ -90,6 +101,6 @@ export async function runServerVideoScan(
     }
   }
 
-  await fetch(apiUrl(`/api/scans/${scanId}`), { method: 'DELETE' }).catch(() => undefined);
+  await deleteServerScan(scanId);
   return null;
 }
