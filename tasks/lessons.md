@@ -39,6 +39,7 @@
 
 ## Dependency Hygiene
 - The browser-side video approach (Phases 9-12: `transcriber.ts`/@huggingface/transformers, `video-extractor.ts`/@ffmpeg, `text-comparator.ts`) was abandoned in Phase 13 for the server pipeline but the files and heavy deps lingered. Periodically grep for zero-importer lib modules and drop them plus their deps. `frame-dedup.ts` looks dead but `proofing-utils.ts` still uses `levenshteinSimilarity` from it — keep it.
+- The vite-7→8 + concurrently-9→10 audit advisories are **dev-only** (esbuild via vite/tsx, shell-quote via concurrently) and never reach `dist/`. They were resolvable without `--force`: before bumping vite to 8, confirm the whole vite-peer chain supports it — `vitest@4.1.5` already does, `@vitejs/plugin-react@5.2.0` already does, but `@tailwindcss/vite@4.1.x` caps at vite 7, so you must also bump `@tailwindcss/vite`/`tailwindcss` to `^4.3.1` (its peer adds `|| ^8`). The minimal `vite.config.ts` here uses only stable APIs, so vite 8 needs no config migration. concurrently 10 requires Node `>=22`. After the explicit bumps, a plain `npm audit fix` (no `--force`) cleared the last esbuild advisory that came in via `tsx`. Result: 0 vulnerabilities, build ~8x faster (rolldown-vite). Note `npm install -D <pkg>@^x` pins an exact version in `package.json` — re-add the `^` to keep caret ranges consistent.
 
 ## Verification
 - Vitest does not support Jest's `--runInBand` flag in this project. Use `npm test` for the stable test command.

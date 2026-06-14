@@ -180,3 +180,59 @@ tooling (build + dev-script deps) that do **not** ship in the production
 `dist/` bundle. Fixes require breaking majors (vite 8, concurrently 10) and
 were left out of scope to keep this a safe finishing pass — flagged here for a
 deliberate dependency-bump session.
+
+## Session 2026-06-14 (round 2) — dependency-bump session: 0 vulnerabilities
+
+This is the "deliberate dependency-bump session" the previous note flagged.
+Cleared all 4 outstanding security advisories. All are **dev-only** tooling
+(none ship in the production `dist/` bundle), but they were blocking a clean
+`npm audit` and a senior-reviewer green light for deploy.
+
+**What I bumped (and why it's safe):**
+- `vite` `^7.2.4 → ^8.0.16` — clears the 2 high esbuild advisories (vite bundled
+  a vulnerable esbuild). Verified the whole toolchain already supports vite 8
+  *before* bumping: `vitest@4.1.5` peer = `^6 || ^7 || ^8`,
+  `@vitejs/plugin-react@5.2.0` peer includes `^8`, and `@tailwindcss/vite`
+  needed `^4.3.1` (4.1.x peer caps at vite 7) so I aligned it + `tailwindcss`
+  to `^4.3.1`. The `vite.config.ts` uses only stable APIs (`defineConfig`,
+  `plugins`, `build.target`, `server.proxy`, `server.headers`) — no vite-7-only
+  surface, so no config migration was needed.
+- `concurrently` `^9.2.1 → ^10.0.3` — clears the 2 critical `shell-quote`
+  advisories (concurrently depended on a vulnerable `shell-quote`).
+  concurrently 10 requires Node `>=22`; local is Node v22.22.3. Only used by the
+  `dev` script to run API + web together; not a runtime dep.
+- `tsx` (transitively, via `npm audit fix`) — the *last* remaining high esbuild
+  advisory was coming from `tsx`'s bundled esbuild; a plain non-`--force`
+  `npm audit fix` bumped it. Both esbuild instances are now `0.28.1` (above the
+  `0.28.0` advisory ceiling) and deduped.
+
+Restored caret (`^`) ranges on the bumped deps for manifest consistency (the
+`npm install -D` had pinned exact versions).
+
+**Verification (all real, all green):**
+- `npm audit` → **0 vulnerabilities** (was 4: 2 high, 2 critical).
+- `npm run typecheck` → exit 0.
+- `npm run lint` → clean.
+- `npm test` → 10/10 (Vitest).
+- `npm run build` → vite 8.0.16 builds all 2386 modules to `dist/` (and ~8x
+  faster: ~0.6s vs the prior ~4.2s).
+- Booted the production API (`tsx server/index.ts`, port 8799): `/api/health`
+  → `{ok:true, ffmpegAvailable:true, providers:{openrouterByok:true}}`; DELETE
+  of an unknown scan id → 204 (idempotent).
+- Booted the vite-8 dev server: `/`, `/scan`, `/pricing`, and `/src/main.tsx`
+  all serve HTTP 200; COOP/COEP headers (`same-origin` / `require-corp`, needed
+  by Tesseract.js WASM) present.
+- Real browser dogfood (Playwright) of `/scan` under vite 8: full Scan UI mounts
+  (navbar, upload zone, settings, rate-limit indicator "10 scans remaining"),
+  **0 console errors, 0 warnings**.
+
+**No source code changed** — this round is `package.json` + `package-lock.json`
+(plus this worklog + a lessons entry). The app's behavior is identical; only the
+build/dev/test tooling moved to non-vulnerable majors.
+
+**Completeness now: ~94%.** The remaining work is all Mark-gated / product
+decisions (unchanged from prior rounds): funded OpenRouter key to exercise the
+audio-aware path end-to-end past the live 402; pick the long-running Node host
+for the Express API; create the Vercel project and deploy. Optional polish that
+remains: a job-artifact TTL sweeper for a hosted backend, server-side rate
+limiting (client-side only today), and further Scan-chunk code-splitting.
