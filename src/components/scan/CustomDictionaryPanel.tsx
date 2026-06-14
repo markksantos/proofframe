@@ -56,7 +56,9 @@ export default function CustomDictionaryPanel({
     <div className="border border-border rounded-xl overflow-hidden">
       {/* Toggle header */}
       <button
+        type="button"
         onClick={() => setIsOpen((prev) => !prev)}
+        aria-expanded={isOpen}
         className="w-full flex items-center justify-between px-4 py-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors text-left"
       >
         <div className="flex items-center gap-2">

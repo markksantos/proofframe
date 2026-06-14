@@ -236,3 +236,48 @@ audio-aware path end-to-end past the live 402; pick the long-running Node host
 for the Express API; create the Vercel project and deploy. Optional polish that
 remains: a job-artifact TTL sweeper for a hosted backend, server-side rate
 limiting (client-side only today), and further Scan-chunk code-splitting.
+
+## Session 2026-06-14 (round 3) — deploy-readiness polish walk
+
+Drove the real app in an isolated headless browser (landing, scan, pricing,
+404, mobile) and ran a full image-scan flow end-to-end. The app is already
+shippable-quality: clean console (0 errors/warnings on every route), responsive
+with no mobile horizontal overflow, working empty/error/validation states,
+proper image alt text + focus-visible styles, and a polished, working core scan
+flow (upload → OCR → flagged "SALEE" 92% with suggestions + bbox overlay).
+
+Fixed three concrete shippability defects found by walking it (not invented):
+
+1. **Button icon/text spacing was inconsistent.** The `Button` base classes had
+   no gap, so icon+label buttons that didn't add `mr-2` rendered the icon flush
+   against the text — visible on the 404 page ("←Go Back", icon-touching-"Home")
+   and in `ErrorBoundary`. Added `gap-2` to the `Button` component and removed
+   the now-redundant `mr-2` workarounds at the 3 call sites that had them
+   (`Scan.tsx`, `ScanResults.tsx` ×2) so spacing is uniform app-wide and not
+   doubled. Verified the actions-bar buttons keep a single correct gap.
+
+2. **Disabled buttons had no disabled affordance.** The only disabled button in
+   the app (the Custom Dictionary "Add" `+`, disabled when the input is empty)
+   rendered at full `opacity:1` / accent background / `cursor:default` and still
+   ran the hover-scale animation — it looked fully active but did nothing. Added
+   `disabled:opacity-40 disabled:cursor-not-allowed` to `Button` and suppressed
+   the hover/tap scale when disabled. Verified on the production build: empty
+   input → `opacity 0.4` + `cursor:not-allowed`; typing a word re-enables it.
+
+3. **Disclosure toggles missing `aria-expanded`.** The Pricing FAQ accordion and
+   the Custom Dictionary collapse header are disclosure widgets but didn't
+   expose open/closed state to assistive tech. Added `aria-expanded` to both
+   (and the missing `type="button"` to the dictionary toggle). Verified both go
+   `false → true` on click in a real browser.
+
+**Verification (all real, all green):** `npm run typecheck` (exit 0),
+`npm run lint` (clean), `npm test` (10/10), `npm run build` (vite 8, all
+modules → `dist/`; the `disabled:*` utilities are present in the compiled CSS).
+Walked the production preview build (`vite preview`) in an isolated headless
+browser: image scan works end-to-end, disabled-button + `aria-expanded` fixes
+confirmed live, 0 console errors/warnings on `/`, `/scan`, `/pricing`, `/404`,
+and no mobile horizontal overflow at 375px.
+
+5 source files touched, no behavior regressions. Everything still remaining is
+the same Mark-gated set above (funded OpenRouter key, backend host choice,
+Vercel deploy).

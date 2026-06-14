@@ -124,7 +124,7 @@ export default function Scan() {
                 </h2>
                 <p className="text-text-secondary text-sm mb-6">{error}</p>
                 <Button variant="primary" size="md" onClick={resetScan}>
-                  <RefreshCw className="w-4 h-4 mr-2" />
+                  <RefreshCw className="w-4 h-4" />
                   Try Again
                 </Button>
               </div>

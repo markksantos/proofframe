@@ -18,7 +18,7 @@ export default function ScanResults({ result, onReset }: ScanResultsProps) {
       {/* Actions bar */}
       <div className="flex flex-wrap items-center gap-3">
         <Button variant="primary" size="md" onClick={onReset}>
-          <RotateCcw className="w-4 h-4 mr-2" />
+          <RotateCcw className="w-4 h-4" />
           New Scan
         </Button>
         <Button
@@ -26,7 +26,7 @@ export default function ScanResults({ result, onReset }: ScanResultsProps) {
           size="md"
           onClick={() => generateReport(result)}
         >
-          <FileDown className="w-4 h-4 mr-2" />
+          <FileDown className="w-4 h-4" />
           Export PDF Report
         </Button>
       </div>

@@ -57,7 +57,7 @@ export default function Button(props: ButtonProps) {
     className = '',
   } = props;
 
-  const classes = `inline-flex items-center justify-center transition-colors ${variantStyles[variant]} ${sizeStyles[size]} ${className}`;
+  const classes = `inline-flex items-center justify-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${variantStyles[variant]} ${sizeStyles[size]} ${className}`;
 
   if (props.to !== undefined) {
     const wrapperClass = className.includes('w-full') ? 'block w-full' : 'inline-block';
@@ -80,10 +80,11 @@ export default function Button(props: ButtonProps) {
   }
 
   const buttonProps = getMotionButtonProps(props as ButtonAsButton);
+  const isDisabled = Boolean(buttonProps.disabled);
   return (
     <motion.button
-      whileHover={{ scale: 1.02 }}
-      whileTap={{ scale: 0.98 }}
+      whileHover={isDisabled ? undefined : { scale: 1.02 }}
+      whileTap={isDisabled ? undefined : { scale: 0.98 }}
       transition={{ type: 'spring', stiffness: 400, damping: 17 }}
       className={classes}
       {...buttonProps}
